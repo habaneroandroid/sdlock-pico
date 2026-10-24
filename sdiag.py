@@ -2,10 +2,13 @@
 sdiag.py - pin-level checks for the Pico to SD module link, for MicroPython.
 
 Sends no SD commands, so it cannot affect a card's lock state. Use it when
-sdlock.SDLock() will not initialise and sd.probe() shows nothing but '--'.
+the card won't start and Diagnose in the menu shows nothing but '--'.
 
-You need a multimeter for hold() and clock(). Measure at the MODULE pads
-rather than the Pico pins, so each reading tests the lead as well as the pin.
+You need a multimeter for hold(), clock() and drive_low(). Measure at the
+MODULE pads rather than the Pico pins, so each reading tests the lead as well
+as the pin.
+
+Press Stop in Thonny first, so the menu in main.py isn't running.
 
     >>> import sdiag
     >>> sdiag.miso_line()      # is anything on the MISO line?

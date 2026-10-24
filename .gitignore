@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 .envrc
+sdlock.json
+sdlock.json.*

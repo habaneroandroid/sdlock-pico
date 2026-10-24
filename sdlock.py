@@ -1,50 +1,31 @@
 """
-sdlock.py - SD card password lock/unlock (CMD42) over SPI, for MicroPython.
+sdlock.py - set and clear the password on an SD card (CMD42) over SPI, for
+MicroPython on a Raspberry Pi Pico.
 
-Sets, tests, changes and removes the CMD42 password on an SD card using a
-Raspberry Pi Pico as the host.
-
-Why SPI: a password-locked card can be brought up over SPI because SPI-mode
-initialisation never reads the SCR register. Linux's SD stack does read it,
-which is why a locked card usually fails to enumerate on a PC and why most
-desktop tooling cannot touch one.
-
-Wiring (SPI0 defaults; pass different pins to SDLock() to change them):
-
-    module CS   --- GP17, physical pin 22
-    module SCK  --- GP18, physical pin 24
-    module MOSI --- GP19, physical pin 25
-    module MISO --- GP16, physical pin 21
-    module 3V3  --- physical pin 36  (3V3 OUT, NOT pin 37 = 3V3_EN)
-    module GND  --- physical pin 38
-    module 5V   --- leave unconnected
-
-Never insert or remove a card while the board is powered.
-
-Usage from the REPL:
+Most people should use the menu in main.py, which runs on boot. This module
+is the library behind it, and can also be used from the REPL:
 
     >>> import sdlock
     >>> sd = sdlock.SDLock()
-    >>> sd.status()
-    >>> sd.set('0x0123456789abcdef')    # assign; card locks at next power-up
-    >>> sd.unlock('0x0123456789abcdef') # test a password, until power cycle
-    >>> sd.clear('0x0123456789abcdef')  # remove permanently
-    >>> sd.lock('0x0123456789abcdef')   # lock now, password already stored
-    >>> sd.setlock('0x0123456789abcdef')# assign and lock in one command
-    >>> sd.set('0xold', '0xnew')        # change an existing password
+    >>> sd.soak()                        # check the wiring (unlocked card)
+    >>> sd.set('0x0123456789abcdef')     # set; card locks at next power-up
+    >>> sd.verify('0x0123456789abcdef')  # lock then unlock with it
+    >>> sd.clear('0x0123456789abcdef')   # remove the password
+    >>> sd.unlock('0x0123456789abcdef')  # unlock until power-off
+    >>> sd.set('0xold', '0xnew')         # change a password
+    >>> sdlock.try_all(sd, sdlock.forms('hunter2'))   # find the byte form
 
-Passwords may be given as bytes, a '0x...' hex string, or plain text. The
-length is part of the password: four bytes and those same four bytes padded
-to sixteen are different passwords to the card.
+Passwords may be bytes, a '0x...' hex string, or plain text, up to 16 bytes.
+The length counts: 4 bytes and the same 4 bytes padded to 16 are different
+passwords.
 
-If init fails, build the object without initialising and run the diagnostic:
+Wiring is in the README. If init fails, try:
 
     >>> sd = sdlock.SDLock(auto=False)
     >>> sd.probe()
 
-Force-erase (CMD42 mode bit 0x08) is deliberately not implemented. It wipes
-the card, and on a card with permanent write protect set it can leave the
-card unusable. See the README for the consequences of losing a password.
+Force-erase (CMD42 mode 0x08) is not implemented on purpose: it wipes the
+card.
 """
 
 from machine import Pin, SPI
@@ -55,7 +36,7 @@ try:
 except ImportError:
     from binascii import hexlify
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 
 # CMD42 data block, byte 0 (mode). Bit 3, force erase, is intentionally absent.
 MODE_UNLOCK = 0x00
@@ -75,6 +56,8 @@ MAX_PWD = 16
 
 NCR_BYTES = 100          # how long to wait for R1
 NCS_BYTES = 8            # idle clocks after CS low, before the command frame
+
+DEFAULT_LBAS = (0, 1, 2, 1024, 65536, 1000000)   # blocks soak() reads
 
 
 def crc7(data):
@@ -119,6 +102,38 @@ def parse_pwd(pwd):
     return out
 
 
+def csd_blocks(csd):
+    """Card capacity in 512-byte blocks, from the 16-byte CSD register."""
+    if csd[0] >> 6 == 0:                  # CSD v1, SDSC
+        read_bl_len = csd[5] & 0x0F
+        c_size = ((csd[6] & 0x03) << 10) | (csd[7] << 2) | (csd[8] >> 6)
+        c_size_mult = ((csd[9] & 0x03) << 1) | (csd[10] >> 7)
+        return (c_size + 1) << (c_size_mult + 2 + read_bl_len - 9)
+    if csd[0] >> 6 == 1:                  # CSD v2, SDHC/SDXC
+        c_size = ((csd[7] & 0x3F) << 16) | (csd[8] << 8) | csd[9]
+    else:                                 # CSD v3, SDUC
+        c_size = ((csd[6] & 0x0F) << 24) | (csd[7] << 16) | (csd[8] << 8) \
+            | csd[9]
+    return (c_size + 1) * 1024
+
+
+def parse_cid(cid):
+    """Decode the 16-byte CID register. 'id' is unique to the card."""
+    def text(b):
+        return ''.join(chr(c) if 32 <= c < 127 else '?' for c in b).strip()
+    return {
+        'id': hexlify(cid[:15]).decode(),
+        'mid': cid[0],
+        'oem': text(cid[1:3]),
+        'name': text(cid[3:8]),
+        'rev': '%d.%d' % (cid[8] >> 4, cid[8] & 0x0F),
+        'serial': '%08x' % ((cid[9] << 24) | (cid[10] << 16)
+                            | (cid[11] << 8) | cid[12]),
+        'date': '%d-%02d' % (2000 + (((cid[13] & 0x0F) << 4) | (cid[14] >> 4)),
+                             cid[14] & 0x0F),
+    }
+
+
 class SDError(Exception):
     pass
 
@@ -129,10 +144,12 @@ class PasswordError(SDError):
 
 
 class SDLock:
-    """A CMD42 host. Construct with auto=False to skip initialisation."""
+    """A CMD42 host. Construct with auto=False to skip initialisation, and
+    verbose=False to stop it printing status after each command."""
 
     def __init__(self, spi_id=0, sck=18, mosi=19, miso=16, cs=17,
-                 baudrate=400000, auto=True):
+                 baudrate=400000, auto=True, verbose=True):
+        self.verbose = verbose
         self.cs = Pin(cs, Pin.OUT, value=1)
         self.spi = SPI(spi_id, baudrate=baudrate, polarity=0, phase=0,
                        sck=Pin(sck), mosi=Pin(mosi), miso=Pin(miso))
@@ -256,10 +273,11 @@ class SDLock:
                 print('warning: CMD59 refused (R1=0x%02x), data CRC stays off'
                       % r1)
 
-        print('card initialised (%s, data CRC %s)'
-              % ('SDHC/SDXC' if self.sdhc else 'SDSC',
-                 'on' if self.crc else 'OFF'))
-        return self.status()
+        if self.verbose:
+            print('card initialised (%s, data CRC %s)'
+                  % ('SDHC/SDXC' if self.sdhc else 'SDSC',
+                     'on' if self.crc else 'OFF'))
+        return self.status(quiet=not self.verbose)
 
     # ---- diagnostics ----
 
@@ -300,10 +318,94 @@ class SDLock:
                      '  LOCK_UNLOCK_FAILED' if failed else ''))
         return {'r1': r1, 'r2': r2, 'locked': locked, 'failed': failed}
 
+    # ---- reads (never write) ----
+
+    def _read_data(self, cmd, arg, n, timeout_ms=1000):
+        """Send a command that answers with one data block of n bytes."""
+        self.cs(0)
+        try:
+            r1, _ = self._cmd(cmd, arg)
+            if r1 != 0:
+                raise SDError('CMD%d rejected, R1=0x%02x (0x04 = card is '
+                              'locked)' % (cmd, r1))
+            deadline = time.ticks_add(time.ticks_ms(), timeout_ms)
+            while True:
+                tok = self.spi.read(1, 0xFF)[0]
+                if tok != 0xFF:
+                    break
+                if time.ticks_diff(deadline, time.ticks_ms()) <= 0:
+                    raise SDError('no data token from CMD%d' % cmd)
+            if tok != 0xFE:
+                raise SDError('CMD%d error token 0x%02x' % (cmd, tok))
+            data = self.spi.read(n, 0xFF)
+            crc = self.spi.read(2, 0xFF)
+        finally:
+            self.cs(1)
+            self.spi.read(1, 0xFF)
+        if self.crc and crc16(data) != (crc[0] << 8) | crc[1]:
+            raise SDError('CMD%d data CRC mismatch' % cmd)
+        return data
+
+    def readblock(self, lba=0):
+        """Read one 512-byte block with CMD17. Fails on a locked card."""
+        return self._read_data(17, lba if self.sdhc else lba * 512, 512)
+
+    def capacity(self):
+        """Card size in 512-byte blocks (CMD9). Works on a locked card."""
+        return csd_blocks(self._read_data(9, 0, 16))
+
+    def cid(self):
+        """Card identity (CMD10) as a dict. Works on a locked card."""
+        return parse_cid(self._read_data(10, 0, 16))
+
+    def check(self, lba=0, repeat=8, quiet=False):
+        """Read one block repeatedly and confirm every read is identical."""
+        first = self.readblock(lba)
+        for n in range(repeat - 1):
+            if self.readblock(lba) != first:
+                raise SDError('block %d differed on read %d - the wiring is '
+                              'unreliable' % (lba, n + 2))
+        if not quiet:
+            print('block %-8d %2d identical reads   first 16: %s%s'
+                  % (lba, repeat, hexlify(first[:16]).decode(),
+                     '   [MBR signature]'
+                     if first[510] == 0x55 and first[511] == 0xAA else ''))
+        return first
+
+    def soak(self, lbas=DEFAULT_LBAS, repeat=12, quiet=False):
+        """Wiring check: check() across several blocks. Returns True if
+        every read matched. Needs an unlocked card. Blocks past the end of
+        the card are skipped."""
+        try:
+            blocks = self.capacity()
+        except SDError as e:
+            print('could not read card size: %s' % e)
+            return False
+        if not quiet:
+            print('card size %d blocks (%d MB)' % (blocks, blocks // 2048))
+        ok = True
+        for lba in lbas:
+            if lba >= blocks:
+                if not quiet:
+                    print('block %-8d skipped, past the end of the card' % lba)
+                continue
+            try:
+                self.check(lba, repeat, quiet)
+            except SDError as e:
+                print('block %-8d FAILED: %s' % (lba, e))
+                ok = False
+        if not quiet or not ok:
+            print('wiring check %s' % ('passed' if ok else 'FAILED'))
+        return ok
+
     # ---- CMD42 ----
 
     def _cmd42(self, mode, pwd=b''):
         """Send one CMD42 lock/unlock data block."""
+        if mode & (MODE_SET_PWD | MODE_CLR_PWD) and not self.crc:
+            raise SDError('data CRC is off, so a corrupted password could be '
+                          'stored. Not writing. Re-run init(); set '
+                          'sd.crc = True to override.')
         block = bytearray(512)
         block[0] = mode
         block[1] = len(pwd)
@@ -340,7 +442,8 @@ class SDLock:
             raise PasswordError('card reports LOCK_UNLOCK_FAILED - wrong '
                                 'password, or the wrong length or encoding '
                                 '(R2=0x%02x)' % st['r2'])
-        self.status()
+        if self.verbose:
+            self.status()
         return st
 
     # ---- operations ----
@@ -350,8 +453,8 @@ class SDLock:
         password, so it is the safe way to test a candidate."""
         return self._cmd42(MODE_UNLOCK, parse_pwd(pwd))
 
-    def lock(self, pwd=None):
-        """Lock now. Most cards want the stored password passed in."""
+    def lock(self, pwd):
+        """Lock now. The card only locks if pwd matches the stored one."""
         return self._cmd42(MODE_LOCK, parse_pwd(pwd))
 
     def set(self, pwd, new_pwd=None):
@@ -365,6 +468,18 @@ class SDLock:
             raise ValueError('combined password too long')
         return self._cmd42(MODE_SET_PWD, data)
 
+    def verify(self, pwd):
+        """Check the stored password is pwd, without a power cycle: lock
+        with it, then unlock with it. Leaves the card unlocked. Returns
+        False if the card refused the lock, meaning the stored password is
+        something else."""
+        try:
+            self.lock(pwd)
+        except PasswordError:
+            return False
+        self.unlock(pwd)
+        return True
+
     def setlock(self, pwd):
         """Assign a password and lock in one command."""
         return self._cmd42(MODE_SET_PWD | MODE_LOCK, parse_pwd(pwd))
@@ -372,3 +487,103 @@ class SDLock:
     def clear(self, pwd):
         """Remove the password permanently. The card then behaves normally."""
         return self._cmd42(MODE_CLR_PWD, parse_pwd(pwd))
+
+
+# ---- finding the byte form of a known password ----
+
+def forms(pwd, pad_to=(8, 16)):
+    """Build the plausible encodings of one password, likeliest first.
+
+    Accepts the same inputs as parse_pwd: bytes, a '0x...' hex string,
+    or plain text. A hex string also yields its literal-digit reading, and
+    text also yields its bytes interpreted as hex where that is possible.
+    """
+    base = []
+    raw = parse_pwd(pwd)
+    base.append(('as given', raw))
+
+    if isinstance(pwd, str):
+        if pwd[:2] in ('0x', '0X'):
+            base.append(('hex digits as ASCII text', pwd[2:].encode()))
+        else:
+            try:
+                base.append(('text read as hex bytes',
+                             parse_pwd('0x' + pwd)))
+            except ValueError:
+                pass
+
+    out = []
+    for name, b in base:
+        out.append(('%s' % name, b))
+        for n in pad_to:
+            if len(b) < n:
+                out.append(('%s, zero padded to %d' % (name, n),
+                            b + bytes(n - len(b))))
+        if len(b) < 16:
+            out.append(('%s, 0xFF padded to 16' % name,
+                        b + b'\xff' * (16 - len(b))))
+        if len(b) > 1:
+            out.append(('%s, byte order reversed' % name, bytes(reversed(b))))
+
+    seen, uniq = set(), []
+    for name, b in out:
+        if len(b) > MAX_PWD:            # e.g. long hex read as ASCII
+            continue
+        if b not in seen:
+            seen.add(b)
+            uniq.append((name, b))
+    return uniq
+
+
+def _reinit(sd):
+    """Re-initialise the card. Returns False, with a message, on failure."""
+    try:
+        sd.init()
+        return True
+    except SDError as e:
+        print('  re-init failed (%s) - power-cycle and restart' % e)
+        return False
+
+
+def try_all(sd, cands, reinit=True):
+    """Try each (name, bytes) candidate. Returns the matching bytes, or None.
+
+    Only a LOCK_UNLOCK_FAILED answer counts as a wrong password. Any other
+    error is a link problem, so that candidate is retried once after a
+    re-init; a second link error stops the run rather than skip a candidate
+    that was never really tested.
+    """
+    if not sd.status(quiet=True)['locked']:
+        print('card is not locked - nothing to test')
+        return None
+
+    for name, pwd in cands:
+        label = '%-38s %2d bytes  %s' % (name, len(pwd),
+                                         hexlify(pwd).decode())
+        for attempt in range(2):
+            try:
+                sd.unlock(pwd)
+                break
+            except PasswordError:
+                break
+            except SDError as e:
+                print('  link error on %s: %s' % (name, e))
+                if not _reinit(sd):
+                    return None
+                if not sd.status(quiet=True)['locked']:
+                    break                      # the unlock got through
+                if attempt:
+                    print('  link error twice on the same candidate - fix '
+                          'the wiring (sd.soak()) and run again')
+                    return None
+
+        if not sd.status(quiet=True)['locked']:
+            print('MATCH %s' % label)
+            print('unlocked until the next power cycle')
+            return pwd
+        print('no    %s' % label)
+        if reinit and not _reinit(sd):
+            return None
+
+    print('none of those matched')
+    return None
