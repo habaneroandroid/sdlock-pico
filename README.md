@@ -278,6 +278,14 @@ CMD42 sends a 512-byte block to the card:
   checking on (CMD59) and sends a CRC with each block, so a block damaged by
   bad wiring is rejected instead of setting the wrong password.
 
+## Tests
+
+The tests run on a computer, no Pico needed. They use an emulated SD card:
+
+```
+python3 tests/test_all.py
+```
+
 ## Acknowledgements
 
 The CMD42 details come from the SD Association's *Physical Layer Simplified
