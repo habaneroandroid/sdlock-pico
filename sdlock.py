@@ -123,6 +123,11 @@ class SDError(Exception):
     pass
 
 
+class PasswordError(SDError):
+    """The card ran CMD42 and reported LOCK_UNLOCK_FAILED."""
+    pass
+
+
 class SDLock:
     """A CMD42 host. Construct with auto=False to skip initialisation."""
 
@@ -332,9 +337,9 @@ class SDLock:
 
         st = self.status(quiet=True)
         if st['failed']:
-            raise SDError('card reports LOCK_UNLOCK_FAILED - wrong password, '
-                          'or the wrong length or encoding (R2=0x%02x)'
-                          % st['r2'])
+            raise PasswordError('card reports LOCK_UNLOCK_FAILED - wrong '
+                                'password, or the wrong length or encoding '
+                                '(R2=0x%02x)' % st['r2'])
         self.status()
         return st
 

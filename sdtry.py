@@ -66,14 +66,32 @@ def forms(pwd, pad_to=(8, 16)):
 
     seen, uniq = set(), []
     for name, b in out:
+        if len(b) > sdlock.MAX_PWD:            # e.g. long hex read as ASCII
+            continue
         if b not in seen:
             seen.add(b)
             uniq.append((name, b))
     return uniq
 
 
+def _reinit(sd):
+    """Re-initialise the card. Returns False, with a message, on failure."""
+    try:
+        sd.init()
+        return True
+    except sdlock.SDError as e:
+        print('  re-init failed (%s) - power-cycle and restart' % e)
+        return False
+
+
 def try_all(sd, cands, reinit=True):
-    """Try each (name, bytes) candidate. Returns the matching bytes, or None."""
+    """Try each (name, bytes) candidate. Returns the matching bytes, or None.
+
+    Only a LOCK_UNLOCK_FAILED answer counts as a wrong password. Any other
+    error is a link problem, so that candidate is retried once after a
+    re-init; a second link error stops the run rather than skip a candidate
+    that was never really tested.
+    """
     if not sd.status(quiet=True)['locked']:
         print('card is not locked - nothing to test')
         return None
@@ -81,23 +99,30 @@ def try_all(sd, cands, reinit=True):
     for name, pwd in cands:
         label = '%-38s %2d bytes  %s' % (name, len(pwd),
                                          hexlify(pwd).decode())
-        try:
-            sd.unlock(pwd)
-        except sdlock.SDError:
-            print('no    %s' % label)
-            if reinit:
-                try:
-                    sd.init()
-                except sdlock.SDError as e:
-                    print('  re-init failed (%s) - power-cycle and restart' % e)
+        for attempt in range(2):
+            try:
+                sd.unlock(pwd)
+                break
+            except sdlock.PasswordError:
+                break
+            except sdlock.SDError as e:
+                print('  link error on %s: %s' % (name, e))
+                if not _reinit(sd):
                     return None
-            continue
+                if not sd.status(quiet=True)['locked']:
+                    break                      # the unlock got through
+                if attempt:
+                    print('  link error twice on the same candidate - fix '
+                          'the wiring (sdread.soak) and run again')
+                    return None
 
         if not sd.status(quiet=True)['locked']:
             print('MATCH %s' % label)
             print('unlocked until the next power cycle')
             return pwd
-        print('no    %s  (accepted but still locked)' % label)
+        print('no    %s' % label)
+        if reinit and not _reinit(sd):
+            return None
 
     print('none of those matched')
     return None

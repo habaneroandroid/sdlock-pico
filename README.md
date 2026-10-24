@@ -123,6 +123,7 @@ If this occurs, go to [Troubleshooting](#troubleshooting) and do not proceed.
 
 ```python
 >>> sdread.soak(sd)
+card capacity 15523840 blocks (7580 MB)
 block 0        12 identical reads   first 16: 00000000...   [MBR signature]
 ...
 soak passed
@@ -213,7 +214,8 @@ Read-only. Never writes.
 |---|---|
 | `readblock(sd, lba=0)` | CMD17 single block. Raises on a locked card. |
 | `check(sd, lba=0, repeat=8)` | Read one block repeatedly; raise if reads differ. |
-| `soak(sd, lbas=..., repeat=12)` | `check()` across several widely spaced blocks. |
+| `soak(sd, lbas=..., repeat=12)` | `check()` across several widely spaced blocks. Skips blocks past the end of the card. |
+| `capacity(sd)` | CMD9. Card size in 512-byte blocks. |
 
 ### `sdiag.py`
 
