@@ -1,7 +1,7 @@
 """
 main.py - menu for sdlock. MicroPython runs this when the Pico starts.
 
-Press Stop in Thonny, or Ctrl+C, to get the normal Python prompt instead.
+Ctrl+C leaves the menu for the normal Python prompt. Ctrl+D restarts it.
 
 Saved passwords and remembered cards are kept in sdlock.json on the Pico,
 in plain text. Anyone with the Pico can read them.
@@ -464,4 +464,12 @@ def main():
                   'run the wiring check.')
 
 
-main()
+try:
+    main()
+    print('Left the menu. Press Ctrl+D to start it again.')
+except EOFError:
+    # Ctrl+D at a prompt. Restart, the same as Ctrl+D at the >>> prompt.
+    import machine
+    machine.soft_reset()
+except KeyboardInterrupt:
+    print('\nLeft the menu. Press Ctrl+D to start it again.')

@@ -83,7 +83,10 @@ files that haven't changed.
 1. Unplug the Pico, put the card in, plug the Pico back in.
 2. Connect to the Pico with `mpremote repl` (or Thonny, or any serial
    terminal). Press Enter to show the menu. If you get a `>>>` prompt
-   instead, press **Ctrl+D** to restart the Pico and start the menu.
+   instead, press **Ctrl+D** to start it.
+
+**Ctrl+D** restarts the menu at any point. **Ctrl+C** or **q** leaves it for
+the Python prompt.
 
 Exit mpremote with **Ctrl+]** before unplugging the Pico. Unplugging while
 it's connected makes mpremote print an error. The error is harmless.

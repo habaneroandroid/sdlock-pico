@@ -52,18 +52,22 @@ print('library tests ok')
 # ---- menu, driven by scripted input ----
 os.chdir(tempfile.mkdtemp())        # main.py writes sdlock.json here
 
-def menu(keys, card):
+class Done(BaseException):
+    """Raised when the scripted keys run out. main.py doesn't catch it."""
+
+def menu(keys, card, end=Done):
+    """Run main.py with scripted keys. end is raised when they run out."""
     machine.CARD = card
     feed = list(keys)
     def fake_input(prompt=''):
         print(prompt, end='')
-        if not feed: raise EOFError
+        if not feed: raise end
         k = feed.pop(0); print(k); return k
     builtins.input = fake_input
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         try: runpy.run_path(REPO + '/main.py', run_name='__main__')
-        except EOFError: pass
+        except Done: pass
     assert not feed, 'unused keys %r' % feed
     return buf.getvalue()
 
@@ -130,6 +134,12 @@ out = menu(['w', 'q'], c); assert 'Card answered 20 times' in out, out
 d = machine.Card(); d.flaky_reads = 1
 out = menu(['1', 'abc', 'abc', '', 'q'], d)
 assert d.pwd == b'' and 'Not writing anything' in out, out
+
+# Ctrl+D at a prompt restarts; Ctrl+C leaves cleanly
+machine.RESETS.clear()
+menu(['t'], c, end=EOFError); assert machine.RESETS == [1]
+out = menu(['1'], c, end=KeyboardInterrupt)
+assert 'Left the menu' in out and 'Traceback' not in out, out
 
 # card that fails to start
 dead = machine.Card(); dead.byte = lambda b, cs: None

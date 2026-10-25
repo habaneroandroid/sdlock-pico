@@ -120,6 +120,10 @@ class Card:
             else: self.failed = True
 
 CARD = Card()
+RESETS = []
+
+def soft_reset():
+    RESETS.append(1)
 _cs = [1]
 
 class Pin:
