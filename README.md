@@ -92,8 +92,9 @@ the Python prompt.
 of the way Thonny connects. Open `main.py` from the Pico and click **Run**
 instead.
 
-Exit mpremote with **Ctrl+]** before unplugging the Pico. Unplugging while
-it's connected makes mpremote print an error. The error is harmless.
+It's safe to unplug the Pico whenever the menu is showing. Every change is
+finished before the menu comes back. If you're using mpremote, exit it with
+**Ctrl+]** first, or it prints a harmless error.
 
 ```
 sdlock 1.1.0
@@ -109,6 +110,8 @@ Saved:   not a remembered card
   w) Wiring check
   r) Re-read the card
   q) Quit to Python prompt
+
+Safe to unplug whenever this menu is showing.
 ```
 
 To use a different card, unplug the Pico, swap the card, and plug it back

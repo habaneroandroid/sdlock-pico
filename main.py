@@ -129,11 +129,15 @@ def pick(data, rec=None, new=False):
     if not a:
         print('Cancelled.')
         return None
+    name = None
     if a.isdigit() and 1 <= int(a) <= len(names):
         name = names[int(a) - 1]
-        return name, unhexlify(data['passwords'][name])
-    if a in data['passwords']:
-        return a, unhexlify(data['passwords'][a])
+    elif a in data['passwords']:
+        name = a
+    if name:
+        pwd = unhexlify(data['passwords'][name])
+        print('  = saved password %s: %s' % (name, show(pwd)))
+        return name, pwd
 
     pwd = parse(a)
     if not pwd:
@@ -443,6 +447,8 @@ def main():
             print('  w) Wiring check')
             print('  r) Re-read the card')
             print('  q) Quit to Python prompt')
+            print()
+            print('Safe to unplug whenever this menu is showing.')
             a = ask('> ').lower()
             if a == '1':
                 do_set(sd, card, data, st)
