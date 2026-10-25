@@ -81,12 +81,16 @@ files that haven't changed.
 ## Using it
 
 1. Unplug the Pico, put the card in, plug the Pico back in.
-2. Connect to the Pico with `mpremote repl` (or Thonny, or any serial
-   terminal). Press Enter to show the menu. If you get a `>>>` prompt
-   instead, press **Ctrl+D** to start it.
+2. Connect to the Pico with `mpremote repl` or any serial terminal. Press
+   Enter to show the menu. If you get a `>>>` prompt instead, press
+   **Ctrl+D** to start it.
 
 **Ctrl+D** restarts the menu at any point. **Ctrl+C** or **q** leaves it for
 the Python prompt.
+
+**In Thonny**, Ctrl+D restarts the Pico but doesn't start the menu, because
+of the way Thonny connects. Open `main.py` from the Pico and click **Run**
+instead.
 
 Exit mpremote with **Ctrl+]** before unplugging the Pico. Unplugging while
 it's connected makes mpremote print an error. The error is harmless.
@@ -218,7 +222,7 @@ and length. A password shown on a screen may be shortened or reformatted.
 ### sdiag.py
 
 Wiring checks with a multimeter. It sends no commands to the card, so it
-can't affect the password. Press Stop in Thonny first, then:
+can't affect the password. Leave the menu first (**q** or Ctrl+C), then:
 
 ```python
 >>> import sdiag
@@ -235,7 +239,7 @@ swapped.
 
 ## Using it from Python
 
-Press Stop in Thonny (or choose **q**) to get the Python prompt.
+Leave the menu (**q** or Ctrl+C) to get the Python prompt.
 
 ```python
 >>> import sdlock

@@ -8,7 +8,7 @@ You need a multimeter for hold(), clock() and drive_low(). Measure at the
 MODULE pads rather than the Pico pins, so each reading tests the lead as well
 as the pin.
 
-Press Stop in Thonny first, so the menu in main.py isn't running.
+Leave the menu first (q or Ctrl+C), so main.py isn't using the pins.
 
     >>> import sdiag
     >>> sdiag.miso_line()      # is anything on the MISO line?
