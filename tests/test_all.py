@@ -71,7 +71,7 @@ def store(): return json.load(open('sdlock.json'))
 
 c = machine.Card()
 # set a new typed password, save as "car", remember card
-out = menu(['1', 'n', '0x0123456789abcdef', '0x0123456789abcdef', 'y', 'car',
+out = menu(['1', '0x0123456789abcdef', '0x0123456789abcdef', 'y', 'car',
             'y', 'y', 'q'], c)
 assert c.pwd == bytes.fromhex('0123456789abcdef') and not c.locked, out
 assert 'Done. The card will lock' in out and 'Wiring OK' in out
@@ -87,23 +87,23 @@ assert c.pwd == b'' and 'Done. The card has no password now.' in out, out
 rec = list(store()['cards'].values())[0]; assert rec['pwd'] is None
 
 # set with a saved password: no typing twice; card already remembered
-out = menu(['1', '1', 'y', 'q'], c)
+out = menu(['1', 'car', 'y', 'q'], c)   # pick saved by name
 assert c.pwd == bytes.fromhex('0123456789abcdef'), out
 assert 'Remember this card' not in out
 
 # locked card, change password: current from card record, new typed
 c.power_cycle()
-out = menu(['1', '', 'n', 'newpw', 'newpw', '', 'y', 'q'], c)
-assert c.pwd == b'newpw', out
+out = menu(['1', '', 'NewPw', 'NewPw', '', 'y', 'q'], c)
+assert c.pwd == b'NewPw', out   # case kept
 
 # typo in second entry: nothing changes
-out = menu(['1', 'n', 'aaa', 'aab', 'q'], c)
-assert c.pwd == b'newpw' and "don't match" in out
+out = menu(['1', 'aaa', 'aab', 'q'], c)
+assert c.pwd == b'NewPw' and "don't match" in out
 
 # wrong password on clear
 c.power_cycle()
-out = menu(['2', 'n', 'n', 'nope', '', 'q'], c)
-assert c.pwd == b'newpw' and 'not the password' in out, out
+out = menu(['2', 'n', 'nope', '', 'q'], c)
+assert c.pwd == b'NewPw' and 'not the password' in out, out
 
 # test menu: find password form; card holds zero-padded-to-16 form
 c.power_cycle(); c.pwd = b'hunter2' + bytes(9); c.locked = True
@@ -115,7 +115,7 @@ PWD = '04285431436c6172696f6e3935333231'
 other = machine.Card(); other.pwd = bytes.fromhex(PWD)
 other.cid = other.cid[:9] + b'\x9b\xa7\x17\x25' + other.cid[13:]   # new serial
 other.power_cycle()
-out = menu(['t', '1', 'n', '0x' + PWD, 'y', 'clarion', 'y', 'q'], other)
+out = menu(['t', '1', '0x' + PWD, 'y', 'clarion', 'y', 'q'], other)
 assert 'Unlocked.' in out and 'Remember this card' in out, out
 assert not other.locked
 rec = [r for r in store()['cards'].values() if r['label'].endswith('9ba71725')][0]
@@ -128,7 +128,7 @@ assert 'Saved:   password clarion\n' in out, out
 c.power_cycle()
 out = menu(['w', 'q'], c); assert 'Card answered 20 times' in out, out
 d = machine.Card(); d.flaky_reads = 1
-out = menu(['1', 'n', 'abc', 'abc', '', 'q'], d)
+out = menu(['1', 'abc', 'abc', '', 'q'], d)
 assert d.pwd == b'' and 'Not writing anything' in out, out
 
 # card that fails to start

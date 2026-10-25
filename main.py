@@ -122,19 +122,22 @@ def pick(data, rec=None, new=False):
     for i, name in enumerate(names):
         print('  %d) %-12s %s'
               % (i + 1, name, show(unhexlify(data['passwords'][name]))))
-    print('  n) Type a password')
-    a = ask('Choice (Enter to cancel): ').lower()
+    if names:
+        print('Pick a number, or type the password.')
+    print('Type it as text, or as hex starting with 0x. Up to 16 bytes.')
+    a = ask('Password (Enter to cancel): ')
     if not a:
+        print('Cancelled.')
         return None
     if a.isdigit() and 1 <= int(a) <= len(names):
         name = names[int(a) - 1]
         return name, unhexlify(data['passwords'][name])
-    if a != 'n':
-        return None
+    if a in data['passwords']:
+        return a, unhexlify(data['passwords'][a])
 
-    print('Type it as text, or as hex starting with 0x. Up to 16 bytes.')
-    pwd = parse(ask('Password: '))
-    if pwd is None or not pwd:
+    pwd = parse(a)
+    if not pwd:
+        print('Cancelled.')
         return None
     print('  = ' + show(pwd))
     if new:
@@ -235,6 +238,7 @@ def do_set(sd, card, data, st):
     if not wiring_ok(sd):
         return
     if not yes('Set the password to %s?' % show(pwd)):
+        print('Nothing changed.')
         return
 
     try:
@@ -280,6 +284,7 @@ def do_clear(sd, card, data, st):
     if not wiring_ok(sd):
         return
     if not yes('Remove the password from this card?'):
+        print('Nothing changed.')
         return
     try:
         sd.clear(pwd)
