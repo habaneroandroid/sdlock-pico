@@ -69,17 +69,24 @@ to work normally.
    only needed for wiring problems.
    - In [Thonny](https://thonny.org/): open each file, then
      File > Save as > Raspberry Pi Pico.
-   - Or from a terminal:
-     `mpremote cp sdlock.py main.py :`
+   - Or from a terminal, in this folder:
+     `mpremote cp sdlock.py main.py sdiag.py :`
+     (`pip install mpremote` if you don't have it.)
+
+To update later, `git pull` and run the same `mpremote cp` command. It skips
+files that haven't changed.
 
 `main.py` runs every time the Pico starts.
 
 ## Using it
 
 1. Unplug the Pico, put the card in, plug the Pico back in.
-2. Open Thonny. Thonny stops the menu when it connects, so press **Ctrl+D**
-   in the Shell to restart the Pico and the menu appears. You can also use
-   any serial terminal; press Enter to show the menu.
+2. Connect to the Pico with `mpremote repl` (or Thonny, or any serial
+   terminal). Press Enter to show the menu. If you get a `>>>` prompt
+   instead, press **Ctrl+D** to restart the Pico and start the menu.
+
+Exit mpremote with **Ctrl+]** before unplugging the Pico. Unplugging while
+it's connected makes mpremote print an error. The error is harmless.
 
 ```
 sdlock 1.1.0
@@ -132,7 +139,9 @@ locks.
 Choose **t**:
 
 - **Unlock** checks a password on a locked card. The card stays unlocked
-  until it's powered off. The stored password doesn't change.
+  until it's powered off. The stored password doesn't change. If it works,
+  you can remember the card, which is how you add a card that already has
+  a password.
 - **Lock** checks a password on an unlocked card that has one.
 - **Find which form** is for when you know the password, but not exactly how
   the original device sent it. See below.

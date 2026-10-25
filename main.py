@@ -145,8 +145,10 @@ def pick(data, rec=None, new=False):
     return save_as(data, pwd), pwd
 
 
-def remember(data, card, name, pwd):
-    """Update this card's record, or offer to create one."""
+def remember(data, card, name, pwd, learned=False):
+    """Update this card's record, or offer to create one. learned=True
+    means the password was found by unlocking, not set here, so there is
+    no set date to record."""
     rec = data['cards'].get(card['id'])
     if rec is None:
         if not yes('Remember this card and its password?'):
@@ -154,7 +156,7 @@ def remember(data, card, name, pwd):
         rec = data['cards'][card['id']] = {'label': card['label']}
     rec['name'] = name
     rec['pwd'] = tohex(pwd) if pwd else None
-    rec['date'] = today()
+    rec['date'] = None if learned else today()
     save(data)
 
 
@@ -314,9 +316,12 @@ def do_test(sd, card, data, st):
         if got:
             try:
                 sd.unlock(got[1])
-                print('Unlocked. That is the password on this card.')
             except PasswordError:
                 print('Wrong password.')
+                return
+            print('Unlocked. That is the password on this card.')
+            if not rec or rec.get('pwd') != tohex(got[1]):
+                remember(data, card, got[0], got[1], learned=True)
     elif a == '2':
         if st['locked']:
             print('The card is already locked.')
@@ -342,7 +347,7 @@ def do_test(sd, card, data, st):
             return
         pwd = sdlock.try_all(sd, sdlock.forms(text))
         if pwd:
-            remember(data, card, save_as(data, pwd), pwd)
+            remember(data, card, save_as(data, pwd), pwd, learned=True)
 
 
 def do_saved(data):

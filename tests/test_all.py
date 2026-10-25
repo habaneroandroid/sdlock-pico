@@ -110,6 +110,20 @@ c.power_cycle(); c.pwd = b'hunter2' + bytes(9); c.locked = True
 out = menu(['t', '3', 'hunter2', '', 'n', 'q'], c)
 assert 'MATCH' in out and not c.locked, out
 
+# unlock a card that was locked elsewhere, then remember it
+PWD = '04285431436c6172696f6e3935333231'
+other = machine.Card(); other.pwd = bytes.fromhex(PWD)
+other.cid = other.cid[:9] + b'\x9b\xa7\x17\x25' + other.cid[13:]   # new serial
+other.power_cycle()
+out = menu(['t', '1', 'n', '0x' + PWD, 'y', 'clarion', 'y', 'q'], other)
+assert 'Unlocked.' in out and 'Remember this card' in out, out
+assert not other.locked
+rec = [r for r in store()['cards'].values() if r['label'].endswith('9ba71725')][0]
+assert rec['name'] == 'clarion' and rec['pwd'] == PWD and rec['date'] is None
+other.power_cycle()
+out = menu(['q'], other)
+assert 'Saved:   password clarion\n' in out, out
+
 # wiring check on locked card, and flaky wiring blocks writes
 c.power_cycle()
 out = menu(['w', 'q'], c); assert 'Card answered 20 times' in out, out
